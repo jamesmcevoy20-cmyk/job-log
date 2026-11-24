@@ -39,8 +39,11 @@ app.disable('x-powered-by');
 app.get('/health', (req, res) => res.send('ok'));
 
 // Password protection (HTTP basic auth). Customer details are private.
+// Only the home-screen install files are left open: they contain no customer data.
+const PUBLIC_FILES = new Set(['/manifest.webmanifest', '/sw.js', '/icon-192.png', '/icon-512.png', '/icon-maskable-512.png', '/apple-touch-icon.png']);
 app.use((req, res, next) => {
   if (!PASSWORD) return next();
+  if (PUBLIC_FILES.has(req.path)) return next();
   const h = req.headers.authorization || '';
   if (h.startsWith('Basic ')) {
     const given = Buffer.from(h.slice(6), 'base64').toString();

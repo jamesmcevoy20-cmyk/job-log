@@ -4,6 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#1d6fd6">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Job Log">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <title>Job Log</title>
 <style>
 :root{--bg:#f5f6f8;--card:#fff;--ink:#1c2430;--mute:#6b7685;--line:#e2e6ec;--acc:#1d6fd6;--acc2:#e8f1fc;--ok:#1f8f4e;--warn:#c77a00;--bad:#c93b3b}
@@ -226,5 +232,6 @@ function renderForm(job){
 load();
 })();
 </script>
+<script>if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));}</script>
 </body>
 </html>
