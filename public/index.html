@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#1d6fd6">
+<title>Job Log</title>
+<style>
+:root{--bg:#f5f6f8;--card:#fff;--ink:#1c2430;--mute:#6b7685;--line:#e2e6ec;--acc:#1d6fd6;--acc2:#e8f1fc;--ok:#1f8f4e;--warn:#c77a00;--bad:#c93b3b}
+*{box-sizing:border-box}
+body{margin:0;font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+header{position:sticky;top:0;z-index:5;background:var(--card);border-bottom:1px solid var(--line);padding:12px 16px;display:flex;gap:10px;align-items:center}
+header h1{font-size:19px;margin:0;flex:1}
+button,.btn{font:inherit;cursor:pointer;border:0;border-radius:10px;padding:11px 14px;background:var(--acc);color:#fff;font-weight:600;display:inline-block;text-align:center}
+.ghost{background:var(--acc2);color:var(--acc)}
+.danger{background:#fdeaea;color:var(--bad)}
+button:disabled{opacity:.5}
+main{max-width:760px;margin:0 auto;padding:14px 14px 90px}
+input,select,textarea{width:100%;font:inherit;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink)}
+textarea{min-height:90px;resize:vertical}
+label.l{display:block;font-size:13px;color:var(--mute);margin:12px 0 4px;font-weight:600}
+.row{display:flex;gap:10px}.row>*{flex:1;min-width:0}
+.bar{display:flex;gap:8px;margin-bottom:12px}
+.bar input{flex:2}.bar select{flex:1}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:10px}
+.job{display:flex;gap:12px;cursor:pointer;align-items:center}
+.thumb{width:64px;height:64px;border-radius:10px;background:var(--acc2) center/cover;flex:none;display:grid;place-items:center;color:var(--acc);font-size:12px}
+.info{flex:1;min-width:0}
+.t{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.s{color:var(--mute);font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pill{display:inline-block;font-size:12px;font-weight:700;padding:2px 9px;border-radius:99px;background:var(--acc2);color:var(--acc)}
+.pill.done{background:#e3f5ea;color:var(--ok)}.pill.progress{background:#fff1d9;color:var(--warn)}
+.photos{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;margin-top:8px}
+.p{position:relative;aspect-ratio:1;border-radius:10px;overflow:hidden;background:#ddd}
+.p img{width:100%;height:100%;object-fit:cover;display:block;cursor:pointer}
+.x{position:absolute;top:4px;right:4px;padding:2px 9px;border-radius:99px;background:rgba(0,0,0,.65);color:#fff;font-size:16px}
+.kv{margin:8px 0}.kv b{display:block;font-size:12px;color:var(--mute);text-transform:uppercase;letter-spacing:.04em}
+.kv a{color:var(--acc)}
+.empty{text-align:center;color:var(--mute);padding:40px 10px}
+.back{background:none;color:var(--acc);padding:6px 0}
+.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
+.actions input{display:none}
+#lb{position:fixed;inset:0;background:rgba(0,0,0,.92);display:none;align-items:center;justify-content:center;z-index:20}
+#lb img{max-width:96vw;max-height:92vh}
+#msg{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#1c2430;color:#fff;padding:10px 16px;border-radius:10px;display:none;z-index:30;max-width:90vw}
+.savebar{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);padding:10px 14px;z-index:6}
+.savebar button{width:100%;max-width:732px;display:block;margin:0 auto}
+</style>
+</head>
+<body>
+<header><h1 id="ttl">Job Log</h1><button id="add">+ New job</button></header>
+<main id="app"></main>
+<div id="lb"><img alt=""></div>
+<div id="msg"></div>
+<script>
+(function(){
+'use strict';
+const $=s=>document.querySelector(s);
+const app=$('#app'),ttl=$('#ttl'),addBtn=$('#add');
+const STATUSES=['Quote','Booked','In progress','Done','Invoiced'];
+let jobs=[],loaded=false,view={name:'list'},filter={q:'',status:''};
+
+function toast(t){const m=$('#msg');m.textContent=t;m.style.display='block';clearTimeout(toast.t);toast.t=setTimeout(()=>m.style.display='none',4000)}
+function el(tag,attrs,...kids){const e=document.createElement(tag);for(const k in(attrs||{})){if(k==='class')e.className=attrs[k];else if(k.startsWith('on'))e.addEventListener(k.slice(2),attrs[k]);else e.setAttribute(k,attrs[k])}for(const c of kids.flat()){if(c==null)continue;e.append(c.nodeType?c:document.createTextNode(c))}return e}
+const photoUrl=f=>'/photos/'+encodeURIComponent(f);
+const pillCls=s=>s==='Done'||s==='Invoiced'?'done':s==='In progress'?'progress':'';
+const fmtDate=d=>{if(!d)return'';try{return new Date(d+'T00:00:00').toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}catch(e){return d}};
+const today=()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')};
+
+async function api(method,url,body){
+  const opt={method,headers:{}};
+  if(body instanceof FormData)opt.body=body;
+  else if(body){opt.headers['Content-Type']='application/json';opt.body=JSON.stringify(body)}
+  const r=await fetch(url,opt);
+  if(!r.ok){let m='Error '+r.status;try{m=(await r.json()).error||m}catch(e){}throw new Error(m)}
+  return r.json();
+}
+async function load(){
+  try{jobs=await api('GET','/api/jobs');loaded=true}catch(e){toast('Could not load jobs: '+e.message)}
+  render();
+}
+function render(){
+  addBtn.style.display=view.name==='list'?'':'none';
+  if(view.name==='list')renderList();
+  else if(view.name==='detail')renderDetail(view.id);
+  else renderForm(view.job);
+}
+function go(v){view=v;window.scrollTo(0,0);render()}
+addBtn.onclick=()=>go({name:'form',job:null});
+
+function match(j){
+  const q=filter.q.toLowerCase();
+  return (!filter.status||j.status===filter.status)&&(!q||[j.customer,j.phone,j.email,j.address,j.title,j.notes].join(' ').toLowerCase().includes(q));
+}
+function jobCard(j){
+  const th=el('div',{class:'thumb'});
+  if(j.photos.length)th.style.backgroundImage='url('+photoUrl(j.photos[0])+')';else th.textContent='No pic';
+  return el('div',{class:'card job',onclick:()=>go({name:'detail',id:j.id})},th,
+    el('div',{class:'info'},el('div',{class:'t'},j.customer),el('div',{class:'s'},j.title),
+      el('div',{class:'s'},[fmtDate(j.date),j.address].filter(Boolean).join(' · ')),
+      el('span',{class:'pill '+pillCls(j.status)},j.status),j.photos.length?el('span',{class:'s'},'  '+j.photos.length+' 📷'):null));
+}
+function renderList(){
+  ttl.textContent='Job Log';
+  const search=el('input',{placeholder:'Search customer, address, job…',type:'search'});search.value=filter.q;
+  const sel=el('select',{},el('option',{value:''},'All'),STATUSES.map(s=>el('option',{value:s},s)));sel.value=filter.status;
+  const results=el('div');
+  const draw=()=>{const l=jobs.filter(match);results.replaceChildren(...(l.length?l.map(jobCard):[el('div',{class:'empty'},!loaded?'Loading…':jobs.length?'No matching jobs.':'No jobs yet. Tap “+ New job”.')]))};
+  search.oninput=()=>{filter.q=search.value;draw()};
+  sel.onchange=()=>{filter.status=sel.value;draw()};
+  app.replaceChildren(el('div',{class:'bar'},search,sel),results);draw();
+}
+
+function renderDetail(id){
+  const j=jobs.find(x=>x.id===id);
+  if(!j)return go({name:'list'});
+  ttl.textContent='Job';
+  const kv=(k,v,href)=>v?el('div',{class:'kv'},el('b',{},k),href?el('a',{href},v):v):null;
+  const gal=el('div',{class:'photos'},j.photos.map(f=>el('div',{class:'p'},el('img',{src:photoUrl(f),loading:'lazy',onclick:()=>openLb(photoUrl(f))}))));
+  const map=j.address?'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(j.address):null;
+  let armed=false;
+  app.replaceChildren(
+    el('button',{class:'back',onclick:()=>go({name:'list'})},'← All jobs'),
+    el('div',{class:'card'},
+      el('h2',{style:'margin:0 0 6px'},j.title||j.customer),el('span',{class:'pill '+pillCls(j.status)},j.status),
+      kv('Date',fmtDate(j.date)),kv('Customer',j.customer),
+      kv('Phone',j.phone,j.phone?'tel:'+j.phone.replace(/[^+\d]/g,''):null),
+      kv('Email',j.email,j.email?'mailto:'+j.email:null),
+      kv('Address',j.address,map),kv('Notes',j.notes)),
+    el('div',{class:'card'},el('b',{},'Photos ('+j.photos.length+')'),gal),
+    el('div',{class:'row'},el('button',{class:'ghost',onclick:()=>go({name:'form',job:j})},'Edit / add photos'),
+      el('button',{class:'danger',onclick:async function(){
+        if(!armed){armed=true;this.textContent='Tap again to delete';setTimeout(()=>{armed=false;this.textContent='Delete'},4000);return}
+        try{await api('DELETE','/api/jobs/'+j.id);jobs=jobs.filter(x=>x.id!==j.id);go({name:'list'})}catch(e){toast('Delete failed: '+e.message)}
+      }},'Delete')));
+}
+function openLb(src){$('#lb img').src=src;$('#lb').style.display='flex'}
+$('#lb').onclick=()=>{$('#lb').style.display='none'};
+
+function shrink(file,max=1800,q=.85){
+  return new Promise(resolve=>{
+    const u=URL.createObjectURL(file),img=new Image();
+    img.onload=()=>{
+      try{
+        const r=Math.min(1,max/Math.max(img.naturalWidth,img.naturalHeight));
+        const c=document.createElement('canvas');c.width=Math.round(img.naturalWidth*r);c.height=Math.round(img.naturalHeight*r);
+        c.getContext('2d').drawImage(img,0,0,c.width,c.height);URL.revokeObjectURL(u);
+        c.toBlob(b=>resolve(b&&b.size<file.size?b:file),'image/jpeg',q);
+      }catch(e){URL.revokeObjectURL(u);resolve(file)}
+    };
+    img.onerror=()=>{URL.revokeObjectURL(u);resolve(file)};
+    img.src=u;
+  });
+}
+
+function renderForm(job){
+  const j=job||{};
+  ttl.textContent=job?'Edit job':'New job';
+  let existing=[...(j.photos||[])];   // saved photo files kept
+  let removed=[];                      // saved photo files to delete
+  let queued=[];                       // {file, url} new photos
+  const f={};
+  const field=(k,label,tag,type,ph)=>{
+    const i=el(tag,tag==='input'?{type,placeholder:ph||''}:{placeholder:ph||''});
+    i.value=j[k]||'';f[k]=i;return [el('label',{class:'l'},label),i];
+  };
+  const statusSel=el('select',{},STATUSES.map(s=>el('option',{value:s},s)));statusSel.value=j.status||'Quote';
+  const dateIn=el('input',{type:'date'});dateIn.value=j.date||today();
+  const gal=el('div',{class:'photos'});
+  const draw=()=>{
+    gal.replaceChildren(
+      ...existing.map(fn=>el('div',{class:'p'},el('img',{src:photoUrl(fn),onclick:()=>openLb(photoUrl(fn))}),
+        el('button',{class:'x',type:'button',onclick:()=>{existing=existing.filter(x=>x!==fn);removed.push(fn);draw()}},'×'))),
+      ...queued.map((q,i)=>el('div',{class:'p'},el('img',{src:q.url,onclick:()=>openLb(q.url)}),
+        el('button',{class:'x',type:'button',onclick:()=>{URL.revokeObjectURL(q.url);queued.splice(i,1);draw()}},'×'))));
+  };
+  draw();
+  const onPick=e=>{
+    for(const file of e.target.files){queued.push({file,url:URL.createObjectURL(file)})}
+    e.target.value='';draw();
+  };
+  const camIn=el('input',{type:'file',accept:'image/*',capture:'environment',onchange:onPick});
+  const picIn=el('input',{type:'file',accept:'image/*',multiple:'',onchange:onPick});
+  const save=el('button',{type:'button'},'Save job');
+  save.onclick=async()=>{
+    const data={customer:f.customer.value,phone:f.phone.value,email:f.email.value,address:f.address.value,title:f.title.value,notes:f.notes.value,status:statusSel.value,date:dateIn.value};
+    if(!data.customer.trim()){toast('Enter a customer name');f.customer.focus();return}
+    save.disabled=true;save.textContent='Saving…';
+    try{
+      let saved=job?await api('PUT','/api/jobs/'+job.id,data):await api('POST','/api/jobs',data);
+      for(const fn of removed){saved=await api('DELETE','/api/jobs/'+saved.id+'/photos/'+encodeURIComponent(fn))}
+      if(queued.length){
+        const fd=new FormData();
+        let n=0;
+        for(const q of queued){save.textContent='Preparing photo '+(++n)+'/'+queued.length+'…';const b=await shrink(q.file);fd.append('photos',b,'photo.jpg')}
+        save.textContent='Uploading photos…';
+        saved=await api('POST','/api/jobs/'+saved.id+'/photos',fd);
+        queued.forEach(q=>URL.revokeObjectURL(q.url));
+      }
+      const i=jobs.findIndex(x=>x.id===saved.id);if(i>=0)jobs[i]=saved;else jobs.unshift(saved);
+      go({name:'detail',id:saved.id});
+    }catch(e){
+      save.disabled=false;save.textContent='Save job';toast('Save failed: '+e.message);
+      if(!job)load();
+    }
+  };
+  const names=[...new Set(jobs.map(x=>x.customer).filter(Boolean))];
+  const dl=el('datalist',{id:'cust'},names.map(n=>el('option',{value:n})));
+  app.replaceChildren(
+    el('button',{class:'back',type:'button',onclick:()=>go(job?{name:'detail',id:job.id}:{name:'list'})},'← Back'),
+    el('div',{class:'card'},
+      field('customer','Customer name','input','text','e.g. Mrs Smith'),dl,
+      el('div',{class:'row'},el('div',{},...field('phone','Phone','input','tel')),el('div',{},...field('email','Email','input','email'))),
+      field('address','Address','textarea',null,'Job address'),
+      field('title','Job','input','text','e.g. Replace boiler'),
+      el('div',{class:'row'},el('div',{},el('label',{class:'l'},'Status'),statusSel),el('div',{},el('label',{class:'l'},'Date'),dateIn)),
+      field('notes','Notes','textarea')),
+    el('div',{class:'card'},el('b',{},'Photos'),gal,
+      el('div',{class:'actions'},
+        el('label',{class:'btn ghost'},'📷 Take photo',camIn),
+        el('label',{class:'btn ghost'},'🖼 Choose photos',picIn))),
+    el('div',{class:'savebar'},save));
+  f.customer.setAttribute('list','cust');
+}
+
+load();
+})();
+</script>
+</body>
+</html>
