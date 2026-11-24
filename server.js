@@ -5,11 +5,16 @@ const path = require('path');
 const crypto = require('crypto');
 
 const PORT = process.env.PORT || 3000;
-const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
+let DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
+try { fs.mkdirSync(path.join(DATA_DIR, 'photos'), { recursive: true }); }
+catch (e) {
+  console.warn('WARNING: cannot write to', DATA_DIR, '- no disk attached? Using temporary storage; data will be lost on redeploy.');
+  DATA_DIR = path.join(__dirname, 'data');
+  fs.mkdirSync(path.join(DATA_DIR, 'photos'), { recursive: true });
+}
 const PHOTO_DIR = path.join(DATA_DIR, 'photos');
 const DB_FILE = path.join(DATA_DIR, 'jobs.json');
 const PASSWORD = process.env.APP_PASSWORD || '';
-fs.mkdirSync(PHOTO_DIR, { recursive: true });
 
 let jobs = [];
 try { jobs = JSON.parse(fs.readFileSync(DB_FILE, 'utf8')); } catch (e) { jobs = []; }
