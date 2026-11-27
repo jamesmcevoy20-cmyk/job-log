@@ -85,6 +85,22 @@ function toast(t){const m=$('#msg');m.textContent=t;m.style.display='block';clea
 function el(tag,attrs,...kids){const e=document.createElement(tag);for(const k in(attrs||{})){if(k==='class')e.className=attrs[k];else if(k.startsWith('on'))e.addEventListener(k.slice(2),attrs[k]);else e.setAttribute(k,attrs[k])}for(const c of kids.flat()){if(c==null)continue;e.append(c.nodeType?c:document.createTextNode(c))}return e}
 const photoUrl=f=>'/photos/'+encodeURIComponent(f);
 const pillCls=s=>s==='Done'||s==='Invoiced'?'done':s==='In progress'?'progress':'';
+let installEvt=null;
+window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();installEvt=e;if(view.name==='list')render()});
+window.addEventListener('appinstalled',()=>{installEvt=null;render()});
+const isStandalone=()=>window.matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;
+const isIOS=()=>/iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+function installCard(force){
+  if(isStandalone())return null;
+  let hidden=false;try{hidden=localStorage.getItem('jl-install-hide')==='1'}catch(e){}
+  if(hidden&&!force)return null;
+  const close=force?null:el('button',{class:'ghost',style:'padding:6px 12px',onclick:()=>{try{localStorage.setItem('jl-install-hide','1')}catch(e){}render()}},'Not now');
+  let body;
+  if(installEvt)body=el('button',{onclick:async()=>{installEvt.prompt();try{await installEvt.userChoice}catch(e){}installEvt=null;render()}},'⬇ Install Job Log on this phone');
+  else if(isIOS())body=el('div',{class:'s',style:'white-space:normal'},'iPhone: tap the Share button (square with arrow) in Safari, then “Add to Home Screen”.');
+  else body=el('div',{class:'s',style:'white-space:normal'},'Open the browser menu (⋮) and tap “Install app” or “Add to Home screen”.');
+  return el('div',{class:'card'},el('b',{},'Put Job Log on your home screen'),el('div',{style:'margin:8px 0'},body),close);
+}
 const fmtDT=t=>{try{return new Date(t).toLocaleString('en-GB',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}catch(e){return''}};
 const LABELS=['','Before','During','After'];
 const meta=(j,f)=>(j.photoMeta&&j.photoMeta[f])||{};
@@ -144,7 +160,7 @@ function renderList(){
     }));
   };
   search.oninput=()=>{filter.q=search.value;draw()};
-  app.replaceChildren(el('div',{class:'bar'},search),chips,sum,results);draw();
+  app.replaceChildren(installCard(false),el('div',{class:'bar'},search),chips,sum,results);draw();
 }
 
 function reportUrl(j){return '/api/jobs/'+j.id+'/report.pdf'}
@@ -229,7 +245,7 @@ function renderSettings(){
     el('div',{class:'card'},el('b',{},'Backup & export'),
       el('div',{class:'s',style:'white-space:normal;margin:6px 0'},'The server also keeps a daily copy of your job list for 14 days. Download the full backup (all jobs + photos) every so often and keep it somewhere safe.'),
       el('div',{class:'actions'},el('a',{class:'btn ghost',href:'/api/backup.zip'},'⬇ Full backup (zip)'),el('a',{class:'btn ghost',href:'/api/export.csv'},'⬇ Jobs spreadsheet (CSV)'))),
-    el('div',{class:'card'},el('a',{class:'btn danger',href:'/logout'},'Sign out')));
+    installCard(true),el('div',{class:'card'},el('a',{class:'btn danger',href:'/logout'},'Sign out')));
 }
 function openLb(src){$('#lb img').src=src;$('#lb').style.display='flex'}
 $('#lb').onclick=()=>{$('#lb').style.display='none'};
