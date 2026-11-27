@@ -270,9 +270,9 @@ app.delete('/api/settings/logo', (req, res) => {
   ['logo.png', 'logo.jpg'].forEach(n => fs.rmSync(path.join(DATA_DIR, n), { force: true }));
   res.json({ ok: true });
 });
+const DEFAULT_LOGO = path.join(__dirname, 'public', 'icon-512.png');
 app.get('/logo', (req, res) => {
-  const f = findLogo();
-  if (!f) return res.status(404).end();
+  const f = findLogo() || DEFAULT_LOGO;
   res.set('Cache-Control', 'no-cache');
   res.sendFile(f);
 });
@@ -319,8 +319,8 @@ app.get('/api/jobs/:id/report.pdf', (req, res) => {
 
   // letterhead
   let textX = 40;
-  const logo = findLogo();
-  if (logo) { try { doc.image(logo, 40, 40, { fit: [100, 56] }); textX = 155; } catch (e) { /* ignore bad logo */ } }
+  const logo = findLogo() || DEFAULT_LOGO;
+  if (logo) { try { doc.image(logo, 40, 40, { fit: [56, 56] }); textX = 110; } catch (e) { /* ignore bad logo */ } }
   doc.font('Helvetica-Bold').fontSize(19).fillColor(INK).text(settings.businessName || 'Job Log', textX, 40, { width: 555 - textX });
   const contact = [settings.phone, settings.email, settings.address].filter(Boolean).join('  ·  ');
   if (contact) doc.font('Helvetica').fontSize(9).fillColor(MUTE).text(contact, textX, doc.y + 2, { width: 555 - textX });
