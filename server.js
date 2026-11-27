@@ -125,6 +125,11 @@ app.get('/logout', (req, res) => {
 // ---------- intake from other sites (e.g. DIY Guy bookings) ----------
 // Needs INTAKE_KEY set here and the same key on the sending site. Without it the endpoint is off.
 const INTAKE_KEY = process.env.INTAKE_KEY || '';
+function intakeKeyOk(req) {
+  if (!INTAKE_KEY) return false;
+  const given = Buffer.from(String(req.get('x-intake-key') || '')), want = Buffer.from(INTAKE_KEY);
+  return given.length === want.length && crypto.timingSafeEqual(given, want);
+}
 app.post('/api/intake', express.json({ limit: '100kb' }), (req, res) => {
   if (!INTAKE_KEY) return res.status(404).json({ error: 'Not found' });
   const given = Buffer.from(String(req.get('x-intake-key') || '')), want = Buffer.from(INTAKE_KEY);
@@ -133,7 +138,16 @@ app.post('/api/intake', express.json({ limit: '100kb' }), (req, res) => {
   const customer = str(b.customer, 200).trim();
   if (!customer) return res.status(400).json({ error: 'Customer name required' });
   const ref = str(b.ref, 60).trim();
-  if (ref) { const dup = jobs.find(j => j.sourceRef === ref); if (dup) return res.json({ ok: true, id: dup.id, duplicate: true }); }
+  if (ref) {
+    const dup = jobs.find(j => j.sourceRef === ref);
+    if (dup) {
+      if (b.syncStatus && STATUSES.includes(b.status) && dup.status !== b.status) {
+        dup.status = b.status; dup.history.push({ status: b.status, at: Date.now() });
+        return save().then(() => res.json({ ok: true, id: dup.id, updated: true }));
+      }
+      return res.json({ ok: true, id: dup.id, duplicate: true });
+    }
+  }
   const status = STATUSES.includes(b.status) ? b.status : 'Booked';
   const j = {
     customer,
@@ -153,6 +167,16 @@ app.post('/api/intake', express.json({ limit: '100kb' }), (req, res) => {
   };
   jobs.unshift(j);
   save().then(() => res.status(201).json({ ok: true, id: j.id }));
+});
+
+// The sending site cancelled the booking: remove the job here (does not call back, so no loop).
+app.delete('/api/intake/:ref', (req, res) => {
+  if (!intakeKeyOk(req)) return res.status(INTAKE_KEY ? 401 : 404).json({ error: 'Not allowed' });
+  const i = jobs.findIndex(j => j.sourceRef === req.params.ref);
+  if (i < 0) return res.json({ ok: true, missing: true });
+  jobs[i].photos.forEach(removeFile);
+  jobs.splice(i, 1);
+  save().then(() => res.json({ ok: true }));
 });
 
 app.use((req, res, next) => {
@@ -238,10 +262,25 @@ function removeFile(name) {
 app.delete('/api/jobs/:id', (req, res) => {
   const i = jobs.findIndex(j => j.id === req.params.id);
   if (i < 0) return res.status(404).json({ error: 'Not found' });
+  const gone = jobs[i];
   jobs[i].photos.forEach(removeFile);
   jobs.splice(i, 1);
   save().then(() => res.json({ ok: true }));
+  notifySource(gone);
 });
+
+// Tell the site a job came from (DIY Guy) that the job was deleted, so its time slot is freed there.
+function notifySource(job) {
+  const base = (process.env.DIY_GUY_URL || '').replace(/\/+$/, '');
+  if (!base || !INTAKE_KEY || job.source !== 'DIY Guy' || !job.sourceRef) return;
+  fetch(base + '/api/intake/cancel', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-intake-key': INTAKE_KEY },
+    body: JSON.stringify({ ref: job.sourceRef }),
+    signal: AbortSignal.timeout(10000)
+  }).then(r => { if (!r.ok) console.error('DIY Guy cancel failed', r.status); })
+    .catch(e => console.error('DIY Guy cancel failed:', e.message));
+}
 
 const asArray = v => v == null ? [] : Array.isArray(v) ? v : [v];
 app.post('/api/jobs/:id/photos', upload.array('photos', 20), (req, res) => {
