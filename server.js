@@ -122,6 +122,39 @@ app.get('/logout', (req, res) => {
   res.setHeader('Set-Cookie', `${COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`);
   res.redirect('/login');
 });
+// ---------- intake from other sites (e.g. DIY Guy bookings) ----------
+// Needs INTAKE_KEY set here and the same key on the sending site. Without it the endpoint is off.
+const INTAKE_KEY = process.env.INTAKE_KEY || '';
+app.post('/api/intake', express.json({ limit: '100kb' }), (req, res) => {
+  if (!INTAKE_KEY) return res.status(404).json({ error: 'Not found' });
+  const given = Buffer.from(String(req.get('x-intake-key') || '')), want = Buffer.from(INTAKE_KEY);
+  if (given.length !== want.length || !crypto.timingSafeEqual(given, want)) return res.status(401).json({ error: 'Bad key' });
+  const b = req.body || {};
+  const customer = str(b.customer, 200).trim();
+  if (!customer) return res.status(400).json({ error: 'Customer name required' });
+  const ref = str(b.ref, 60).trim();
+  if (ref) { const dup = jobs.find(j => j.sourceRef === ref); if (dup) return res.json({ ok: true, id: dup.id, duplicate: true }); }
+  const status = STATUSES.includes(b.status) ? b.status : 'Booked';
+  const j = {
+    customer,
+    phone: str(b.phone, 60).trim(),
+    email: str(b.email, 200).trim(),
+    address: str(b.address, 500).trim(),
+    title: str(b.title, 200).trim(),
+    notes: str(b.notes, 5000).trim(),
+    status,
+    date: /^\d{4}-\d{2}-\d{2}$/.test(b.date || '') ? b.date : new Date().toISOString().slice(0, 10),
+    photos: [], photoMeta: {},
+    history: [{ status, at: Date.now() }],
+    created: Date.now(),
+    source: str(b.source, 60).trim(),
+    sourceRef: ref,
+    id: id()
+  };
+  jobs.unshift(j);
+  save().then(() => res.status(201).json({ ok: true, id: j.id }));
+});
+
 app.use((req, res, next) => {
   if (!PASSWORD || PUBLIC_FILES.has(req.path)) return next();
   if (validToken(getCookie(req, COOKIE))) return next();
