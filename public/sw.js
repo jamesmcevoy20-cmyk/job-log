@@ -1,6 +1,6 @@
 // Lets the app open from the home screen and show the last page you saw if you are offline.
 // Never stores customer data, photos, bookings or admin pages.
-const CACHE = 'app-shell-v1';
+const CACHE = 'app-shell-v2';
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', e => {
   e.waitUntil(
@@ -15,7 +15,7 @@ self.addEventListener('fetch', e => {
   if (/^\/(api|photos|admin)(\/|$)/.test(u.pathname)) return;
   e.respondWith(
     fetch(r).then(res => {
-      if (res.ok) { const copy = res.clone(); caches.open(CACHE).then(c => c.put(r, copy)); }
+      if (res.ok && !res.redirected && !/\/login/.test(res.url)) { const copy = res.clone(); caches.open(CACHE).then(c => c.put(r, copy)); }
       return res;
     }).catch(() => caches.match(r))
   );
